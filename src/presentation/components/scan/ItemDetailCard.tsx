@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Card } from '@/presentation/components/ui';
 import { COLORS, SPACING } from '@/presentation/theme';
+import { useI18n } from '@/presentation/i18n/useI18n';
 
 interface ItemDetailCardProps {
   itemCode: string;
@@ -12,37 +13,51 @@ interface ItemDetailCardProps {
 }
 
 export function ItemDetailCard({ itemCode, itemName, uom, onHandQty, currentLine }: ItemDetailCardProps) {
+  const { t } = useI18n();
   return (
-    <Card style={{ borderColor: COLORS.primary, borderWidth: 1 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-         <View style={{ flex: 1 }}>
-            <Text style={styles.itemCodeBig}>{itemCode}</Text>
-            <Text style={styles.itemNameBig}>{itemName}</Text>
-            <Text style={{ color: COLORS.textSecondary }}>ĐVT: {uom}</Text>
-         </View>
-         <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ fontSize: 12, color: COLORS.textSecondary }}>Hiện có</Text>
-            <Text style={{ fontSize: 16, fontWeight: '700' }}>{onHandQty}</Text>
-         </View>
+    <Card style={styles.card}>
+      <View style={styles.headerRow}>
+        <View style={styles.codePill}>
+          <Text style={styles.itemCodeBig}>{itemCode}</Text>
+        </View>
+        <View style={styles.stockPill}>
+          <Text style={styles.stockLabel}>{t('scan.itemCardSystemStock')}</Text>
+          <Text style={styles.stockValue}>{onHandQty}</Text>
+        </View>
       </View>
+      <Text style={styles.itemNameBig}>{itemName}</Text>
+      <Text style={styles.uomText}>{t('scan.itemCardUom', { uom })}</Text>
+
       <View style={styles.divider} />
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-         <View>
-           <Text style={{ fontSize: 14, color: COLORS.textMain }}>Đã kiểm (Vị trí này):</Text>
-           <Text style={{ fontSize: 12, color: COLORS.textLight }}>Tổng / Tốt</Text>
-         </View>
-         <View style={{ alignItems: 'flex-end' }}>
-           <Text style={styles.currentActualBig}>{currentLine ? currentLine.total : '--'}</Text>
-           <Text style={{ fontSize: 14, color: COLORS.success, fontWeight: '700' }}>{currentLine ? currentLine.usable : '--'} OK</Text>
-         </View>
+
+      <View style={styles.countRow}>
+        <View>
+          <Text style={styles.countLabel}>{t('scan.itemCardCountedHere')}</Text>
+          <Text style={styles.countHint}>{t('scan.itemCardTotalGood')}</Text>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={styles.currentActualBig}>{currentLine ? currentLine.total : '--'}</Text>
+          <Text style={styles.usableText}>{t('scan.itemCardGoodSuffix', { qty: currentLine ? currentLine.usable : '--' })}</Text>
+        </View>
       </View>
     </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  itemCodeBig: { fontSize: 14, fontFamily: 'monospace', color: COLORS.textSecondary },
-  itemNameBig: { fontSize: 20, fontWeight: '800', color: COLORS.textMain, marginVertical: 4 },
-  currentActualBig: { fontSize: 32, fontWeight: '800', color: COLORS.primary },
+  card: { borderColor: COLORS.primary, borderWidth: 1, borderRadius: 16 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  codePill: { backgroundColor: COLORS.infoBg, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
+  itemCodeBig: { fontSize: 12, fontFamily: 'monospace', color: COLORS.primary },
+  stockPill: { alignItems: 'flex-end' },
+  stockLabel: { fontSize: 11, color: COLORS.textSecondary },
+  stockValue: { fontSize: 18, fontWeight: '800', color: COLORS.textMain },
+  itemNameBig: { fontSize: 20, fontWeight: '800', color: COLORS.textMain, marginVertical: 6, fontFamily: 'sans-serif-condensed' },
+  uomText: { color: COLORS.textSecondary },
+  currentActualBig: { fontSize: 28, fontWeight: '800', color: COLORS.primary },
+  usableText: { fontSize: 14, color: COLORS.success, fontWeight: '700' },
+  countRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  countLabel: { fontSize: 14, color: COLORS.textMain, fontWeight: '700' },
+  countHint: { fontSize: 12, color: COLORS.textLight },
   divider: { height: 1, backgroundColor: COLORS.divider, marginVertical: SPACING.s },
 });

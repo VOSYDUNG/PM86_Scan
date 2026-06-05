@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, ViewStyle, TextStyle, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, ViewStyle, TextStyle, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, SPACING, SIZES, SHADOWS } from '@/presentation/theme';
 import { ChevronRight } from 'lucide-react-native';
@@ -10,6 +10,7 @@ export function Screen(props: {
   title?: string; 
   subtitle?: string;
   headerRight?: React.ReactNode;
+  headerRightPlacement?: 'inline' | 'stacked';
   children: React.ReactNode; 
   scrollable?: boolean;
   fab?: React.ReactNode;
@@ -19,15 +20,28 @@ export function Screen(props: {
     <View style={[styles.screenContent, props.style]}>
       {props.title ? (
         <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>{props.title}</Text>
-            {props.subtitle ? <Text style={styles.headerSubtitle}>{props.subtitle}</Text> : null}
+          <View style={styles.headerTop}>
+            <View style={styles.headerLeft}>
+              <View style={styles.headerBrand}>
+                <Image source={require('../../../assets/LOGO_HD_transparent.png')} style={styles.headerLogo} resizeMode="contain" />
+              </View>
+              <View style={styles.headerAccent} />
+              <View style={styles.headerText}>
+                <Text style={styles.headerTitle} numberOfLines={1}>{props.title}</Text>
+              </View>
+            </View>
+            {props.headerRight && props.headerRightPlacement !== 'stacked' && (
+              <View style={styles.headerRight}>
+                {props.headerRight}
+              </View>
+            )}
           </View>
-          {props.headerRight && (
-            <View style={{ marginLeft: 16 }}>
+          {props.subtitle ? <Text style={styles.headerSubtitle}>{props.subtitle}</Text> : null}
+          {props.headerRight && props.headerRightPlacement === 'stacked' ? (
+            <View style={styles.headerRightRow}>
               {props.headerRight}
             </View>
-          )}
+          ) : null}
         </View>
       ) : null}
       {props.children}
@@ -168,10 +182,10 @@ export function Badge(props: { label: string; color?: string; type?: 'success' |
   switch (props.type) {
     case 'default': bg = '#ECEFF1'; text = COLORS.textSecondary; break;
     case 'success': bg = '#E8F5E9'; text = COLORS.success; break;
-    case 'warning': bg = '#FFF3E0'; text = COLORS.warning; break;
+    case 'warning': bg = COLORS.warningBg; text = COLORS.warning; break;
     case 'error': bg = '#FFEBEE'; text = COLORS.error; break;
     case 'neutral': bg = '#ECEFF1'; text = COLORS.textSecondary; break;
-    case 'info': bg = '#E3F2FD'; text = COLORS.primary; break;
+    case 'info': bg = COLORS.infoBg; text = COLORS.primary; break;
   }
   
   if (props.color) {
@@ -228,9 +242,37 @@ const styles = StyleSheet.create({
   // Screen
   screenContainer: { flex: 1, backgroundColor: COLORS.background },
   screenContent: { flex: 1, padding: SPACING.l, gap: SPACING.l },
-  header: { marginBottom: SPACING.s, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  headerTitle: { fontSize: 28, fontWeight: '800', color: COLORS.primary, letterSpacing: -0.5 },
-  headerSubtitle: { fontSize: 14, color: COLORS.textSecondary, marginTop: 4 },
+  header: { 
+    marginBottom: SPACING.s,
+    backgroundColor: COLORS.surface,
+    padding: SPACING.m,
+    borderRadius: SIZES.radiusLarge,
+    borderWidth: 1,
+    borderColor: COLORS.divider,
+    ...SHADOWS.card,
+  },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: SPACING.s },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.s, flex: 1, minWidth: 0 },
+  headerBrand: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.divider,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerLogo: { width: 28, height: 28 },
+  headerAccent: { width: 4, height: 28, borderRadius: 2, backgroundColor: COLORS.primary },
+  headerText: { flex: 1, minWidth: 0 },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textMain, letterSpacing: -0.2 },
+  headerSubtitle: { fontSize: 12, color: COLORS.textSecondary, marginTop: 6 },
+  headerRight: { marginLeft: SPACING.s },
+  headerRightRow: {
+    marginTop: SPACING.s,
+    alignSelf: 'flex-end',
+  },
   
   // Card
   card: { 

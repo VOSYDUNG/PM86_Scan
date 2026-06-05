@@ -1,23 +1,26 @@
 export const COLORS = {
-  primary: '#003B73', // NNC Navy Blue
-  primaryDark: '#002850',
-  accent: '#FF6B00', // Safety Orange
-  accentHover: '#E65100',
+  primary: '#1F7A3A', // NNC Green
+  primaryDark: '#0F5E2A',
+  accent: '#F2D200', // NNC Yellow
+  accentHover: '#D4B700',
   
-  background: '#F4F6F8', // Cool Gray Surface
+  background: '#F5F7F2', // Warm neutral
   surface: '#FFFFFF',
   
   textMain: '#1A1C1E',
-  textSecondary: '#546E7A',
-  textLight: '#90A4AE',
+  textSecondary: '#4B5B53',
+  textLight: '#8AA095',
   textOnPrimary: '#FFFFFF',
   
   success: '#2E7D32',
-  warning: '#F57C00',
-  error: '#D32F2F',
+  warning: '#B58B00',
+  error: '#C62828',
   
-  border: '#CFD8DC',
-  divider: '#ECEFF1',
+  border: '#D6E2D7',
+  divider: '#E6EFE7',
+
+  infoBg: '#E9F5EE',
+  warningBg: '#FFF4CC',
 };
 
 export const SPACING = {
@@ -52,4 +55,13 @@ export const SHADOWS = {
     shadowRadius: 8,
     elevation: 6,
   },
+};
+
+export const ACTION_COLORS = {
+  dangerBg: '#FFE5E5',
+  dangerBorder: '#F4B5B5',
+  dangerText: '#B71C1C',
+  exportBg: '#E7F4EB',
+  exportBorder: '#C7E3D0',
+  exportText: '#1F7A3A',
 };

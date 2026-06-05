@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { CheckCircle } from 'lucide-react-native';
 import { COLORS, SHADOWS, SPACING } from '@/presentation/theme';
+import { useI18n } from '@/presentation/i18n/useI18n';
 
 interface ScanLastActionProps {
   action: {
@@ -12,6 +13,7 @@ interface ScanLastActionProps {
 }
 
 export function ScanLastAction({ action }: ScanLastActionProps) {
+  const { t } = useI18n();
   const [visible, setVisible] = React.useState(false);
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
 
@@ -43,8 +45,8 @@ export function ScanLastAction({ action }: ScanLastActionProps) {
        <View style={styles.content}>
           <CheckCircle size={20} color={COLORS.success} />
           <View style={{ flex: 1 }}>
-             <Text style={styles.title} numberOfLines={1}>Đã lưu: {action.itemName}</Text>
-             <Text style={styles.desc}>Số lượng: {action.qty}</Text>
+             <Text style={styles.title} numberOfLines={1}>{t('scan.lastSavedTitle', { name: action.itemName })}</Text>
+             <Text style={styles.desc}>{t('scan.lastSavedQty', { qty: action.qty })}</Text>
           </View>
        </View>
     </Animated.View>
@@ -62,9 +64,9 @@ const styles = StyleSheet.create({
   content: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E8F5E9',
+    backgroundColor: COLORS.infoBg,
     padding: SPACING.m,
-    borderRadius: 8,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: COLORS.success,
     gap: 12,

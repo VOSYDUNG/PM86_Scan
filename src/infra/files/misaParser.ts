@@ -1,225 +1,155 @@
 import { MisaImportRow } from '@/domain/entities/types';
 import { stripDiacritics } from '@/domain/utils/normalize';
 
-function normHeader(s: unknown): string {
-  const t = String(s ?? '').trim();
-  return stripDiacritics(t)
+function normHeader(input: unknown): string {
+  return stripDiacritics(String(input ?? ''))
     .toLowerCase()
     .replace(/\s+/g, '')
     .replace(/[()]/g, '')
-    .replace(/[?]/g, ''); // Remove question marks common in bad encoding
+    .replace(/[?]/g, '');
 }
+
+function headerLike(token: string, expected: string): boolean {
+  if (!token || !expected) return false;
+  return token === expected || token.includes(expected) || expected.includes(token);
+}
+
+function findHeaderIndex(rowNorm: string[], expectedTokens: string[]): number {
+  return rowNorm.findIndex((token) => expectedTokens.some((expected) => headerLike(token, expected)));
+}
+
+type HeaderLayout = {
+  itemCode: number;
+  itemName: number;
+  uom: number;
+  onHand: number;
+  headerRow: number;
+  dataStart: number;
+  warehouseName: string;
+};
 
 function toNumber(v: unknown): number {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
   const s = String(v ?? '').trim();
   if (!s) return 0;
-  
   const clean = s.replace(/\s/g, '');
-  
-  // Check format 1.000,00
   if (clean.includes('.') && clean.includes(',')) {
-     if (clean.lastIndexOf(',') > clean.lastIndexOf('.')) {
-        // 1.000,00 -> remove dot, comma to dot
-        return Number(clean.replace(/\./g, '').replace(',', '.'));
-     } else {
-        // 1,000.00 -> remove comma
-        return Number(clean.replace(/,/g, ''));
-     }
+    if (clean.lastIndexOf(',') > clean.lastIndexOf('.')) {
+      return Number(clean.replace(/\./g, '').replace(',', '.'));
+    }
+    return Number(clean.replace(/,/g, ''));
   }
-  
   const parsed = parseFloat(clean.replace(/\./g, '').replace(',', '.'));
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function extractWarehouseName(aoa: unknown[][], headerRow: number): string {
+  for (let i = 0; i < headerRow; i += 1) {
+    const raw = (aoa[i] ?? [])
+      .map((cell) => String(cell ?? '').trim())
+      .filter(Boolean)
+      .join(' ');
+    if (!raw) continue;
+    const normalized = stripDiacritics(raw).toLowerCase();
+    if (!normalized.includes('kho')) continue;
+
+    const byColon = raw.match(/Kho\s*:\s*(.+?)(?:,\s*Từ ngày|,\s*Tu ngay|$)/i);
+    if (byColon?.[1]) return byColon[1].trim();
+
+    const normByColon = normalized.match(/kho\s*:\s*(.+?)(?:,\s*tu\s*ngay|$)/i);
+    if (normByColon?.[1]) return normByColon[1].trim();
+  }
+  return 'Kho mặc định';
+}
+
+function resolveMisaLayout(aoa: unknown[][]): HeaderLayout {
+  for (let i = 0; i < aoa.length; i += 1) {
+    const row = aoa[i] ?? [];
+    if (!Array.isArray(row) || row.length === 0) continue;
+    const rowNorm = row.map((c) => normHeader(c));
+
+    const hasStt = findHeaderIndex(rowNorm, ['stt']) >= 0;
+    const itemCode = findHeaderIndex(rowNorm, ['mahang']);
+    const itemName = findHeaderIndex(rowNorm, ['tenhang']);
+    const uom = findHeaderIndex(rowNorm, ['dvt', 'donvitinh']);
+    const onHand = findHeaderIndex(rowNorm, ['cuoiky', 'soluongcuoiky', 'soluongtoncuoiky']);
+
+    if ((hasStt || i <= 8) && itemCode >= 0 && itemName >= 0 && uom >= 0 && onHand >= 0) {
+      const next = (aoa[i + 1] ?? []).map((c) => normHeader(c));
+      const hasSubHeader = headerLike(next[onHand] || '', 'soluong');
+      return {
+        itemCode,
+        itemName,
+        uom,
+        onHand,
+        headerRow: i,
+        dataStart: hasSubHeader ? i + 2 : i + 1,
+        warehouseName: extractWarehouseName(aoa, i),
+      };
+    }
+  }
+
+  throw new Error(
+    'Sai cấu trúc MISA thực tế. Cần header gồm: STT, Mã hàng, Tên hàng, ĐVT, Cuối kỳ.',
+  );
+}
+
+function isAggregateCode(itemCode: string): boolean {
+  const code = normHeader(itemCode);
+  return code.includes('tongcong') || code.includes('cong') || code.includes('subtotal');
+}
+
+function buildRow(layout: HeaderLayout, row: unknown[]): MisaImportRow | null {
+  const rawItemCode = String(row[layout.itemCode] ?? '').trim();
+  const itemName = String(row[layout.itemName] ?? '').trim();
+  if (!rawItemCode && !itemName) return null;
+  if (!rawItemCode) return null;
+  if (isAggregateCode(rawItemCode)) return null;
+
+  const itemCode = rawItemCode.replace(/\s+/g, '').toUpperCase();
+  const uom = String(row[layout.uom] ?? '').trim();
+  const onHandQty = toNumber(row[layout.onHand]);
+
+  return {
+    warehouseName: layout.warehouseName,
+    itemCode,
+    itemName,
+    uom,
+    onHandQty,
+  };
+}
+
 export function parseMisaAoa(aoa: unknown[][]): MisaImportRow[] {
   if (!Array.isArray(aoa) || aoa.length === 0) return [];
-
-  let globalWarehouseName = '';
-  let headerRowIndex = -1;
-  let dataStart = 0;
-  let colMap: {
-    warehouse?: number;
-    itemCode?: number;
-    itemName?: number;
-    uom?: number;
-    onHand?: number;
-  } = {};
-
-  // 1. Scan first 15 rows for "Kho:" and Header
-  for (let i = 0; i < Math.min(15, aoa.length); i++) {
-    const row = aoa[i] ?? [];
-    const rowStr = row.join(' ');
-    
-    // Detect Global Warehouse Name
-    if (!globalWarehouseName && (rowStr.includes('Kho:') || rowStr.includes('Kho :'))) {
-       const match = rowStr.match(/Kho\s*[:]\s*([^,]+)/i);
-       if (match && match[1]) {
-          globalWarehouseName = match[1].trim();
-       }
-    }
-
-    const rowNorm = row.map(c => normHeader(c));
-    
-    // Detect Header Columns
-    const idxItemCode = rowNorm.findIndex(c => c.includes('mahang') || c === 'ma');
-    const idxItemName = rowNorm.findIndex(c => c.includes('tenhang') || c === 'ten');
-    const idxUom = rowNorm.findIndex(c => c === 'dvt' || c.includes('donvi'));
-    const idxOnHand = rowNorm.findIndex(c => c.includes('cuoiky') || c.includes('tonkho') || c === 'sl');
-    
-    // Optional Warehouse Column
-    const idxWarehouse = rowNorm.findIndex(c => c.includes('tenkho') || c === 'kho');
-
-    if (idxItemCode >= 0 && idxItemName >= 0) {
-       headerRowIndex = i;
-       colMap = {
-         warehouse: idxWarehouse,
-         itemCode: idxItemCode,
-         itemName: idxItemName,
-         uom: idxUom,
-         onHand: idxOnHand
-       };
-       
-       // Check next row for sub-headers
-       const nextRow = aoa[i + 1] ?? [];
-       const nextRowNorm = nextRow.map(c => normHeader(c));
-       const isSubHeader = nextRowNorm.some(c => c.includes('soluong') || c.includes('thucte'));
-       
-       dataStart = isSubHeader ? i + 2 : i + 1;
-       break;
-    }
-  }
-
-  // Fallback if global warehouse name is still empty
-  if (!globalWarehouseName) {
-     globalWarehouseName = 'Kho mặc định';
-  }
-
-  if (headerRowIndex < 0) return [];
-
+  const layout = resolveMisaLayout(aoa);
   const out: MisaImportRow[] = [];
-  
-  for (let i = dataStart; i < aoa.length; i++) {
+  for (let i = layout.dataStart; i < aoa.length; i += 1) {
     const row = aoa[i] ?? [];
-    
-    // Determine Warehouse Name
-    let warehouseName = globalWarehouseName;
-    if (colMap.warehouse !== undefined && colMap.warehouse >= 0) {
-       const val = String(row[colMap.warehouse] ?? '').trim();
-       if (val) warehouseName = val;
-    }
-
-    const rawItemCode = String(row[colMap.itemCode!] ?? '').trim();
-    if (!rawItemCode) continue;
-
-    // Skip aggregation rows
-    const checkCode = normHeader(rawItemCode);
-    if (checkCode.includes('tongcong') || checkCode.includes('cong')) continue;
-
-    // STRICT CLEANING
-    const itemCode = rawItemCode.replace(/\s+/g, '').toUpperCase();
-    
-    const itemName = String(row[colMap.itemName!] ?? '').trim();
-    const uom = colMap.uom !== undefined ? String(row[colMap.uom] ?? '').trim() : '';
-    
-    const onHandQty = colMap.onHand !== undefined ? toNumber(row[colMap.onHand]) : 0;
-
-    out.push({ warehouseName, itemCode, itemName, uom, onHandQty });
+    const parsed = buildRow(layout, row);
+    if (!parsed) continue;
+    out.push(parsed);
   }
-
   return out;
 }
 
 export async function* parseMisaAoaInChunks(aoa: unknown[][], chunkSize = 300) {
   if (!Array.isArray(aoa) || aoa.length === 0) return;
-
-  let globalWarehouseName = '';
-  let headerRowIndex = -1;
-  let dataStart = 0;
-  let colMap: {
-    warehouse?: number;
-    itemCode?: number;
-    itemName?: number;
-    uom?: number;
-    onHand?: number;
-  } = {};
-
-  // 1. Scan first 15 rows for "Kho:" and Header
-  for (let i = 0; i < Math.min(15, aoa.length); i++) {
-    const row = aoa[i] ?? [];
-    const rowStr = row.join(' ');
-    
-    if (!globalWarehouseName && (rowStr.includes('Kho:') || rowStr.includes('Kho :'))) {
-       const match = rowStr.match(/Kho\s*[:]\s*([^,]+)/i);
-       if (match && match[1]) {
-          globalWarehouseName = match[1].trim();
-       }
-    }
-
-    const rowNorm = row.map(c => normHeader(c));
-    
-    const idxItemCode = rowNorm.findIndex(c => c.includes('mahang') || c === 'ma');
-    const idxItemName = rowNorm.findIndex(c => c.includes('tenhang') || c === 'ten');
-    const idxUom = rowNorm.findIndex(c => c === 'dvt' || c.includes('donvi'));
-    const idxOnHand = rowNorm.findIndex(c => c.includes('cuoiky') || c.includes('tonkho') || c === 'sl');
-    const idxWarehouse = rowNorm.findIndex(c => c.includes('tenkho') || c === 'kho');
-
-    if (idxItemCode >= 0 && idxItemName >= 0) {
-       headerRowIndex = i;
-       colMap = {
-         warehouse: idxWarehouse,
-         itemCode: idxItemCode,
-         itemName: idxItemName,
-         uom: idxUom,
-         onHand: idxOnHand
-       };
-       
-       const nextRow = aoa[i + 1] ?? [];
-       const nextRowNorm = nextRow.map(c => normHeader(c));
-       const isSubHeader = nextRowNorm.some(c => c.includes('soluong') || c.includes('thucte'));
-       
-       dataStart = isSubHeader ? i + 2 : i + 1;
-       break;
-    }
-  }
-
-  if (!globalWarehouseName) {
-     globalWarehouseName = 'Kho mặc định';
-  }
-
-  if (headerRowIndex < 0) return;
-
-  const total = aoa.length - dataStart;
+  const layout = resolveMisaLayout(aoa);
+  const total = Math.max(0, aoa.length - layout.dataStart);
   let processed = 0;
   let buffer: MisaImportRow[] = [];
 
-  for (let i = dataStart; i < aoa.length; i++) {
+  for (let i = layout.dataStart; i < aoa.length; i += 1) {
     const row = aoa[i] ?? [];
-    
-    let warehouseName = globalWarehouseName;
-    if (colMap.warehouse !== undefined && colMap.warehouse >= 0) {
-       const val = String(row[colMap.warehouse] ?? '').trim();
-       if (val) warehouseName = val;
-    }
+    const parsed = buildRow(layout, row);
+    if (!parsed) continue;
 
-    const rawItemCode = String(row[colMap.itemCode!] ?? '').trim();
-    if (!rawItemCode) continue;
-
-    const checkCode = normHeader(rawItemCode);
-    if (checkCode.includes('tongcong') || checkCode.includes('cong')) continue;
-
-    const itemCode = rawItemCode.replace(/\s+/g, '').toUpperCase();
-    const itemName = String(row[colMap.itemName!] ?? '').trim();
-    const uom = colMap.uom !== undefined ? String(row[colMap.uom] ?? '').trim() : '';
-    const onHandQty = colMap.onHand !== undefined ? toNumber(row[colMap.onHand]) : 0;
-
-    buffer.push({ warehouseName, itemCode, itemName, uom, onHandQty });
-    processed++;
-
+    buffer.push(parsed);
+    processed += 1;
     if (buffer.length >= chunkSize) {
       yield { rows: buffer, processed, total };
       buffer = [];
-      await new Promise(r => setTimeout(r, 0)); // Yield to event loop
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
   }
 

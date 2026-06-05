@@ -59,13 +59,15 @@ export function exportRepoSqlite(): ExportRepo {
         onHandQty: number;
         totalCount: number | null;
         totalUsable: number | null;
+        outOfScopeCount: number;
       }>(
         `
         WITH AggregatedTotals AS (
           SELECT 
             itemKey,
             SUM(countTotal) as totalCount,
-            SUM(countUsable) as totalUsable
+            SUM(countUsable) as totalUsable,
+            SUM(CASE WHEN isOutOfScope = 1 THEN 1 ELSE 0 END) as outOfScopeCount
           FROM count_lines
           WHERE sessionId = ?
           GROUP BY itemKey
@@ -77,7 +79,8 @@ export function exportRepoSqlite(): ExportRepo {
             s.uom, 
             s.onHandQty,
             c.totalCount as totalCount,
-            c.totalUsable as totalUsable
+            c.totalUsable as totalUsable,
+            IFNULL(c.outOfScopeCount, 0) as outOfScopeCount
         FROM snapshot_rows s
         LEFT JOIN AggregatedTotals c
            ON c.itemKey = s.itemKey
@@ -104,6 +107,7 @@ export function exportRepoSqlite(): ExportRepo {
         countTotal: number | null;
         countUsable: number | null;
         exceptions: string | null;
+        isOutOfScope: number;
         updatedAt: number | null;
       }>(
         `
@@ -120,6 +124,7 @@ export function exportRepoSqlite(): ExportRepo {
           cl.countTotal as countTotal,
           cl.countUsable as countUsable,
           cl.exceptions as exceptions,
+          IFNULL(cl.isOutOfScope, 0) as isOutOfScope,
           cl.updatedAt as updatedAt
         FROM count_lines cl
         JOIN locations l ON l.id = cl.locationId
@@ -161,11 +166,26 @@ export function exportRepoSqlite(): ExportRepo {
         `,
         [params.sessionId, params.snapshotId, params.warehouseName]
       );
+      const mapped = await db.getFirstAsync<{ n: number }>(
+        'SELECT COUNT(DISTINCT itemKey) AS n FROM location_scope_items WHERE sessionId = ?',
+        [params.sessionId],
+      );
+      const outOfScope = await db.getFirstAsync<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM count_lines WHERE sessionId = ? AND isOutOfScope = 1',
+        [params.sessionId],
+      );
+      const inScopeScanned = await db.getFirstAsync<{ n: number }>(
+        'SELECT COUNT(DISTINCT itemKey) AS n FROM count_lines WHERE sessionId = ? AND isOutOfScope = 0',
+        [params.sessionId],
+      );
       
       return {
         total: totalRes?.n || 0,
         scanned: stats?.scanned || 0,
-        diffCount: stats?.diffs || 0
+        inScopeScanned: inScopeScanned?.n || 0,
+        diffCount: stats?.diffs || 0,
+        mapped: mapped?.n || 0,
+        outOfScope: outOfScope?.n || 0,
       };
     },
 
@@ -231,10 +251,14 @@ export function exportRepoSqlite(): ExportRepo {
         onHandQty: number;
         actualQty: number | null;
         diffQty: number | null;
+        outOfScopeCount: number;
       }>(
         `
         WITH AggregatedTotals AS (
-          SELECT itemKey, SUM(countUsable) as totalUsable
+          SELECT
+            itemKey,
+            SUM(countUsable) as totalUsable,
+            SUM(CASE WHEN isOutOfScope = 1 THEN 1 ELSE 0 END) as outOfScopeCount
           FROM count_lines
           WHERE sessionId = ?
           GROUP BY itemKey
@@ -247,6 +271,7 @@ export function exportRepoSqlite(): ExportRepo {
             s.onHandQty,
             c.totalUsable as actualQty,
             (IFNULL(c.totalUsable, 0) - s.onHandQty) as diffQty,
+            IFNULL(c.outOfScopeCount, 0) as outOfScopeCount,
             NULL as note
         FROM snapshot_rows s
         LEFT JOIN AggregatedTotals c ON c.itemKey = s.itemKey
@@ -260,7 +285,8 @@ export function exportRepoSqlite(): ExportRepo {
       return rows.map(r => ({
         ...r,
         diffQty: r.actualQty !== null ? (r.actualQty - r.onHandQty) : null,
-        note: null
+        outOfScopeCount: r.outOfScopeCount ?? 0,
+        note: null,
       }));
     },
   };

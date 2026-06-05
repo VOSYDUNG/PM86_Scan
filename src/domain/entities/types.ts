@@ -92,8 +92,64 @@ export type LocationCount = {
     expectedLines: number; // Based on snapshot for this location (if available)
     countedLines: number;
     uncountedLines: number;
+    outOfScopeCount: number;
   };
   updatedAt: number;
+};
+
+export type LocationScopeSource = 'mapping_import' | 'manual';
+
+export type LocationScopeItem = {
+  sessionId: SessionId;
+  locationId: LocationId;
+  itemKey: ItemKey;
+  source: LocationScopeSource;
+  createdAt: number;
+};
+
+export type LocationScopeImportError = {
+  row: number;
+  locationCode?: string;
+  itemCode?: string;
+  reason: string;
+};
+
+export type LocationScopeImportResult = {
+  inserted: number;
+  ignoredDuplicates: number;
+  createdLocations: number;
+  invalidRows: LocationScopeImportError[];
+};
+
+export type LocationExchangeMeta = {
+  dataCycleCode: string;
+  snapshotId: string;
+  sourceFileName: string;
+  warehouseName: string;
+  locationCode: string;
+  locationName: string;
+  snapshotDate: string;
+};
+
+export type LocationPackageItem = {
+  itemCode: string;
+  itemName: string;
+  uom: string;
+  onHandQty: number;
+};
+
+export type LocationSubmissionRow = {
+  itemCode: string;
+  countTotal: number;
+  countUsable: number;
+  outOfScope: boolean;
+  updatedAt: number;
+};
+
+export type LocationSubmissionImportResult = {
+  importedRows: number;
+  locationId: string;
+  locationCode: string;
 };
 
 // 3. Quality Buckets (Plan Section 4.5)
@@ -184,4 +240,14 @@ export const QUALITY_LABEL_VI: Record<QualityCode, string> = {
   WRONG_SIZE_PACK: 'Sai quy cách/Size',
   LOW_QUALITY: 'Phẩm chất kém',
   OTHER: 'Khác',
+};
+
+export const QUALITY_LABEL_KEY: Record<QualityCode, string> = {
+  GOOD: 'quality.good',
+  EXPIRED: 'quality.expired',
+  DAMAGED: 'quality.damaged',
+  WRONG_CODE: 'quality.wrongCode',
+  WRONG_SIZE_PACK: 'quality.wrongSizePack',
+  LOW_QUALITY: 'quality.lowQuality',
+  OTHER: 'quality.other',
 };

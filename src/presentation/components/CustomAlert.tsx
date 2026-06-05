@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Modal, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { AlertCircle, CheckCircle, Info, X } from 'lucide-react-native';
 import { COLORS, SIZES, SHADOWS, SPACING } from '@/presentation/theme';
+import { useI18n } from '@/presentation/i18n/useI18n';
 
 export type AlertType = 'success' | 'warning' | 'error' | 'info';
 
@@ -25,9 +26,10 @@ export const CustomAlert = ({
   type = 'info',
   onConfirm,
   onCancel,
-  confirmText = 'Đồng ý',
-  cancelText = 'Hủy',
+  confirmText,
+  cancelText,
 }: CustomAlertProps) => {
+  const { t } = useI18n();
   if (!visible) return null;
 
   let Icon = Info;
@@ -64,7 +66,7 @@ export const CustomAlert = ({
           <View style={styles.footer}>
             {onCancel && (
               <TouchableOpacity onPress={onCancel} style={styles.btnCancel}>
-                <Text style={styles.btnCancelText}>{cancelText}</Text>
+                <Text style={styles.btnCancelText}>{cancelText || t('customAlert.cancelDefault')}</Text>
               </TouchableOpacity>
             )}
             
@@ -75,7 +77,7 @@ export const CustomAlert = ({
                 { backgroundColor: color, flex: onCancel ? 1 : 0.5, marginLeft: onCancel ? SPACING.m : 0 }
               ]}
             >
-              <Text style={styles.btnConfirmText}>{confirmText}</Text>
+              <Text style={styles.btnConfirmText}>{confirmText || t('customAlert.confirmDefault')}</Text>
             </TouchableOpacity>
           </View>
         </View>

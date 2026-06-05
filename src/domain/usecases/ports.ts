@@ -1,4 +1,16 @@
-import { Candidate, CountException, ItemKey, SnapshotId } from '@/domain/entities/types';
+import {
+  Candidate,
+  CountException,
+  ItemKey,
+  LocationExchangeMeta,
+  LocationPackageItem,
+  LocationSubmissionImportResult,
+  LocationSubmissionRow,
+  LocationScopeImportResult,
+  LocationScopeItem,
+  LocationScopeSource,
+  SnapshotId,
+} from '@/domain/entities/types';
 
 export interface BarcodeAliasRepo {
   getItemKeyByBarcode(barcode: string): Promise<ItemKey | undefined>;
@@ -56,7 +68,9 @@ export interface SnapshotRepo {
   >;
 
   getAllSnapshots(): Promise<Array<{ id: string; snapshotAt: number; sourceFileName: string }>>;
+  getSnapshotMeta(snapshotId: string): Promise<{ id: string; snapshotAt: number; sourceFileName: string } | undefined>;
   deleteSnapshot(snapshotId: string): Promise<void>;
+  renameSnapshot(snapshotId: string, sourceFileName: string): Promise<void>;
   countSnapshotRows(params: { snapshotId: SnapshotId; warehouseName: string }): Promise<number>;
 }
 
@@ -141,6 +155,7 @@ export interface CountSessionRepo {
         expectedLines: number;
         countedLines: number;
         uncountedLines: number;
+        outOfScopeCount: number;
       };
       updatedAt: number;
       // Joined fields
@@ -156,6 +171,73 @@ export interface CountSessionRepo {
     locationName?: string; // Optional if creating new
     locationType?: string; // Optional
   }): Promise<string>; // Returns locationId
+
+  updateLocationName(params: { locationId: string; locationName: string }): Promise<void>;
+
+  removeLocationFromSession(params: { sessionId: string; locationId: string }): Promise<void>;
+
+  importLocationScope(params: {
+    sessionId: string;
+    snapshotId: SnapshotId;
+    warehouseName: string;
+    rows: Array<{
+      locationCode: string;
+      locationName?: string;
+      itemCode: string;
+      itemName?: string;
+      uom?: string;
+      warehouseName?: string;
+      snapshotId?: string;
+      sourceFileName?: string;
+      snapshotDate?: string;
+      note?: string;
+    }>;
+  }): Promise<LocationScopeImportResult>;
+
+  listLocationScopeItems(params: { sessionId: string; locationId?: string }): Promise<LocationScopeItem[]>;
+
+  replaceLocationScope(params: {
+    sessionId: string;
+    locationId: string;
+    itemKeys: string[];
+    source?: LocationScopeSource;
+  }): Promise<{ inserted: number }>;
+
+  upsertLocationScopeItem(params: {
+    sessionId: string;
+    locationId: string;
+    itemKey: string;
+    source?: LocationScopeSource;
+  }): Promise<void>;
+
+  getLocationScopeStats(sessionId: string): Promise<{ mappedSessionSku: number; outOfScopeLines: number }>;
+  hasLocationCountData(params: { sessionId: string; locationId: string }): Promise<boolean>;
+  getSessionMeta(sessionId: string): Promise<{ sessionId: string; snapshotId: string; warehouseName: string; createdAt: number } | undefined>;
+  getLocationMeta(params: { sessionId: string; locationId: string }): Promise<{ locationId: string; locationCode: string; locationName: string } | undefined>;
+  buildLocationPackage(params: { sessionId: string; locationId: string; dataCycleCode: string }): Promise<{ meta: LocationExchangeMeta; items: LocationPackageItem[] }>;
+  setSessionExchangeMeta(params: {
+    sessionId: string;
+    dataCycleCode: string;
+    sourceSnapshotId: string;
+    sourceFileName: string;
+    snapshotDate: string;
+    warehouseName: string;
+  }): Promise<void>;
+  getSessionExchangeMeta(sessionId: string): Promise<{
+    sessionId: string;
+    dataCycleCode: string;
+    sourceSnapshotId: string;
+    sourceFileName: string;
+    snapshotDate: string;
+    warehouseName: string;
+  } | undefined>;
+  importLocationSubmission(params: {
+    sessionId: string;
+    expectedSnapshotId: string;
+    expectedWarehouseName: string;
+    meta: LocationExchangeMeta;
+    rows: LocationSubmissionRow[];
+  }): Promise<LocationSubmissionImportResult>;
 }
 
 export interface CountRepo {
@@ -177,8 +259,17 @@ export interface CountRepo {
     mode: 'set' | 'accumulate';
     qty: number;
     exceptions?: CountException[]; // Only if updating exceptions
-  }): Promise<{
+  }, opts?: { isOutOfScope?: boolean }): Promise<{
     actualQty: number; // Returns new total
+  }>;
+
+  isItemInLocationScope(params: {
+    sessionId: string;
+    locationId: string;
+    itemKey: string;
+  }): Promise<{
+    inScope: boolean;
+    hasMapping: boolean;
   }>;
 
   findAllCountLinesForItem(params: {
@@ -225,6 +316,7 @@ export interface ExportRepo {
       onHandQty: number;
       totalCount: number | null;
       totalUsable: number | null;
+      outOfScopeCount: number;
     }>
   >;
 
@@ -246,6 +338,7 @@ export interface ExportRepo {
       countTotal: number | null;
       countUsable: number | null;
       exceptions: string | null;
+      isOutOfScope: number;
       updatedAt: number | null;
     }>
   >;
@@ -254,7 +347,14 @@ export interface ExportRepo {
     sessionId: string;
     snapshotId: SnapshotId;
     warehouseName: string;
-  }): Promise<{ total: number; scanned: number; diffCount: number }>;
+  }): Promise<{
+    total: number;
+    scanned: number;
+    inScopeScanned: number;
+    diffCount: number;
+    mapped: number;
+    outOfScope: number;
+  }>;
 
   getExportTotal(params: {
     sessionId: string;
@@ -281,6 +381,7 @@ export interface ExportRepo {
       onHandQty: number;
       actualQty: number | null;
       diffQty: number | null;
+      outOfScopeCount: number;
       note: string | null;
     }>
   >;

@@ -1,147 +1,207 @@
-# BIG UPDATE PLAN - PM86 StockCount Expo
-
-Cap nhat: 2026-01-27
-
-Muc tieu: On dinh app khi demo Expo, sua loi cap nhat vi tri, cai thien dieu huong va luong quet kiem ke de su dung ro rang, khong bi lac huong sau khi luu.
+# UI_Redesign_NNC_StockCount.md
+> Tài liệu đề xuất thiết kế lại giao diện (Mobile) cho **NNC StockCount / PM86**  
+> Mục tiêu: **đẹp – dễ dùng – đúng brand NNC – thao tác nhanh trong kho** (1 tay / WEDGE / Enter)
 
 ---
 
-## 0) Tong quan hien trang (doc tu code + bao cao tu nguoi dung)
-
-### Bao cao loi/van de dang gap
-- Crash khi demo tren Expo (mobile), chu yeu tai luong tao phien + quet ma.
-- Tao phien kiem ke: mot so vi tri khong cap nhat tren man hinh danh sach vi tri.
-- Man quet: sau khi tim kiem + cap nhat xong khong ro di chuyen dau. Nhu cau moi: o lai Scan de quet lien tuc, co nut "Ket thuc" ro rang.
-- Dieu huong chua tot, can kiem tra va cai tien (back stack, luong vao/ra Scan, Item Detail, Inventory).
-
-### Loi typecheck hien tai (tu 2026-01-27)
-- app/inventory.tsx: Badge type 'default'/'info' khong hop le.
-- app/report/[itemKey].tsx: QUALITY_LABEL_VI index voi key any.
-- app/report/items.tsx: ListEmptyComponent nhan false.
-- app/scan.tsx: RefObject<TextInput | null> khong hop le.
-- src/tests/resolveInput.test.ts: test su dung API cu.
+## 1) Vấn đề hiện tại (từ màn bạn gửi)
+1. **Mảng nền xanh đậm quá lớn** → nặng mắt, làm chìm thông tin quan trọng (trạng thái đã kiểm / lệch).
+2. **CTA chưa rõ “1 việc chính”**: Quét là thao tác chính nhưng đang ngang hàng với các mục khác.
+3. **Cross-Location list** chưa “đập vào mắt” trạng thái: item đã kiểm/ lệch/ chưa kiểm chưa nổi bật.
+4. **Màn quét** thiếu **context** (Location hiện tại / mode quét), thiếu thao tác nhanh (recent / manual input), dễ scan lặp.
 
 ---
 
-## 1) Giai doan A - On dinh + Crash/Freeze
+## 2) Nguyên tắc thiết kế (chuẩn kho / chuẩn PM86)
+### 2.1 “Green để dẫn hướng, Neutral để đọc dữ liệu”
+- Primary Green (brand) dùng cho **CTA, icon, chip**, không phủ toàn màn.
+- Nền & danh sách nên **trắng / neutral** để đọc số liệu lâu không mỏi.
+- Accent Yellow chỉ làm **điểm nhấn** (progress, scan line, warning nhẹ).
 
-### A1. Thu thap thong tin crash
-- Bat log Expo (metro) + log device (adb logcat) trong luc demo.
-- Them ErrorBoundary toan app (Expo Router) de bat loi UI.
-- Bat log khi vao/ra man quan trong: Home, Inventory, Scan, Report.
-STATUS: DONE (them ErrorBoundary, log, log store)
-
-### A2. Fix nhanh crash co the xay ra
-- Guard null cho snapshotId/warehouseName/sessionId/locationId o cac screen.
-- Neu data load that bai: hien thong bao, khong crash.
-- Doi luong import/scan/hieu nang de khong freeze UI.
-STATUS: DONE (guard + log + giam resolve racing)
-
-### A3. Xac nhan
-- Reproduce crash truc tiep tren Expo Go.
-- Crash rate = 0 trong 3 lan demo (import -> tao phien -> scan -> report).
-STATUS: PENDING (can test tren thiet bi)
+### 2.2 Ưu tiên dữ liệu dạng “kho nhìn phát hiểu ngay”
+- Card item: **trái = định danh**, **phải = số**.
+- Trạng thái phải hiện ngay: **Chưa kiểm / Đã kiểm / Lệch / Cần kiểm lại**.
+- Tap target >= 48dp, spacing thoáng, dùng được với găng tay / tay ướt.
 
 ---
 
-## 2) Giai doan B - Cap nhat vi tri (Location) sau tao phien
+## 3) NNC Design System (tokens gợi ý)
+> Dev có thể đưa vào `ui.tsx` để đồng bộ toàn app.
 
-### B1. Rà soat data flow
-- Kiem tra repos.session.createSession() co tu tao location mac dinh hay khong.
-- Dam bao Inventory screen load lai list location sau khi tao phien.
-STATUS: DONE
+### 3.1 Colors (đề xuất)
+- `brandGreen`: màu chủ đạo (theo logo NNC)
+- `deepGreen`: dùng cho badge/heading
+- `accentYellow`: dùng cho scan line/progress warning
+- `bg`: #F7F9F8 (nền sáng)
+- `card`: #FFFFFF
+- `border`: #E6EEE9
+- `text`: #0E1A14
+- `muted`: #6C7A73
+- `danger`: #D64545 (lệch lớn / cảnh báo)
 
-### B2. Sua logic refresh
-- Dam bao loadData() duoc goi sau khi createSession hoac sau khi quet tao location.
-- Xem lai useFocusEffect + useEffect de tranh stale state/loop.
-STATUS: DONE
+> Lưu ý: dùng đúng màu logo hiện có để giữ brand; các mã hex trên chỉ là placeholder.
 
-### B3. Xac nhan
-- Tao phien moi -> danh sach co it nhat 1 location mac dinh.
-- Tao location moi (scan QR) -> list cap nhat ngay.
-STATUS: PENDING (can test tren thiet bi)
+### 3.2 Typography
+- Title: 18–20 (semibold)
+- Section: 16–18
+- Body: 14–16
+- Code/Meta (mã hàng, location_code): 12–13 (muted)
 
----
+### 3.3 Radius / Shadow
+- Radius: 14–18 (card), 999 (chip)
+- Shadow: nhẹ, không đậm (để không “app tài chính”)
 
-## 3) Giai doan C - Cai thien luong quet (Scan UX)
-
-### C1. Luong vao/ra Scan ro rang
-- Nut goc phai quay lai danh sach vi tri (Inventory) hoat dong on dinh.
-- Sau khi luu (Save) o lai Scan, auto focus input de quet tiep.
-- Them nut "Ket thuc" de ket thuc phien/thoat khoi Scan (chi ro).
-STATUS: DONE
-
-### C2. Tim kiem/Go y
-- Kiem tra resolveInputToItem luong search + suggest.
-- Khi da chon item -> luu -> tra ve trang thai san sang quet tiep (xoa selection + focus input).
-STATUS: DONE
-
-### C3. Danh dau vi tri hien tai
-- Hien thi ten ma vi tri dang kiem ke ro rang.
-STATUS: DONE
-
-### C4. Xac nhan
-- Demo: quet 10 ma lien tiep, luu xong co the tiep tuc quet ma khac trong 1 cham, khong tu dong roi khoi Scan.
-- Back ve Inventory khong mat context session.
-STATUS: PENDING (can test tren thiet bi)
+### 3.4 Component chuẩn
+- `ChipStatus`: Chưa kiểm / Đã kiểm / Lệch / Cần kiểm lại
+- `KpiChip`: Tổng / Đã kiểm / Còn lại / Lệch
+- `PrimaryCTA`: nút chính (Quét)
+- `ListCard`: card item 2 cột (trái định danh – phải số)
 
 ---
 
-## 4) Giai doan D - Dieu huong & Back stack
-
-### D1. Rà soat router
-- Kiem tra router.replace vs router.push cho cac man quan trong (Inventory, Scan, Report, Item Detail).
-- Dung pattern: Home -> Inventory -> Scan. Back tu Scan ve Inventory (khong ve Home neu chua muon).
-STATUS: DONE (dieu huong vao Scan dung push)
-
-### D2. Dieu huong tu Report -> Item Detail -> Quay lai Report
-- Giữ trạng thái search/filter khi quay lai.
-STATUS: DONE (state giu, pagination)
-
-### D3. Xac nhan
-- Di qua cac man: Home -> Inventory -> Scan -> Report -> Item Detail -> Back -> Report -> Back -> Inventory.
-STATUS: PENDING (can test tren thiet bi)
+## 4) IA (Information Architecture) — cấu trúc màn
+1. **Trung tâm kiểm kê (Home)**  
+2. **Quét (Scan)**
+   - Quét Location (QR vị trí)
+   - Quét SKU (sau khi đã set Location)
+3. **Quản lý vị trí (Location list + tạo/sửa/in QR)**
+4. **Xem Items (Cross-Location)**
+5. **Xuất file (CSV / XLSX nội bộ)**
 
 ---
 
-## 5) Giai doan E - Do on dinh + Typecheck
+## 5) Thiết kế lại từng màn (wireframe logic)
 
-### E1. Fix toan bo TypeScript errors
-- Sua Badge type.
-- Type cho exceptions (CountException).
-- Fix ListEmptyComponent.
-- Fix qtyInputRef type.
-- Update tests resolveInput.
-STATUS: DONE
+### 5.1 Home — “Trung tâm kiểm kê”
+**Mục tiêu:** 1 chạm vào quét, nhìn tiến độ nhanh.
 
-### E2. Test nhanh
-- npm run typecheck
-- npm run lint (neu can)
-STATUS: DONE (typecheck)
+**Header (gọn):**
+- Logo nhỏ + tiêu đề
+- Chip: `Kho: Vientiane SPM`
+- Icon: Settings (⚙️), Home (🏠) nếu cần
 
----
+**KPI (nhẹ):**
+- Progress bar + 3 KpiChip:
+  - Tổng mã
+  - Đã kiểm
+  - Còn lại
+- Nền sáng, viền xanh, không dùng block xanh đặc.
 
-## 6) Giai doan F - Cải thiện hieu nang (neu can)
+**Quick Actions (grid 2×2):**
+- Quét (Primary)
+- Xem Items
+- Quản lý vị trí
+- Xuất file
 
-- Tam hoan neu crash con chua on dinh.
-- Toi uu query SQLite: pagination, index, bat query caching.
-STATUS: DONE (pagination sessions + report; export stats for counted)
-
----
-
-## Can thong tin tu nguoi dung
-
-1) Crash xay ra trong buoc tao phien hay quet? (neu co log/anh chup man hinh xin gui)
-2) Vi tri khong cap nhat: xay ra sau tao phien hay sau quet QR vi tri?
+**Brand accent:**
+- Watermark pattern logo/đồi núi **rất mờ** (5–8% opacity) trong card KPI.
 
 ---
 
-## De xuat thu tu thuc hien
+### 5.2 Quản lý vị trí
+**Mục tiêu:** quản lý location nhanh + thấy progress theo location.
 
-1) On dinh crash + fix typecheck (A + E)
-2) Fix refresh location (B)
-3) Cai thien luong Scan + dieu huong (C + D)
+**Phần “Hướng dẫn QR vị trí”:**
+- Đổi sang dạng **collapsible** (mặc định thu gọn).
+
+**Location card:**
+- Trái: icon location + tên + code (muted)
+- Phải: ChipStatus (Chưa kiểm/Đang kiểm/Xong)
+- Dưới: progress mini-bar “x / y mã”
+- Actions: Edit / Delete / (NEW) “In QR” hoặc “Copy QR text”
 
 ---
 
-Neu dong y, minh se bat dau voi Giai doan A + E de on dinh truoc, sau do qua B/C/D.
+### 5.3 Cross-Location — “Tổng hợp Items”
+**Mục tiêu:** biết ngay item nào chưa kiểm / lệch / đã kiểm.
+
+**Header sticky 2 tầng:**
+1) Search (full width)  
+2) Filter chips: `Chưa kiểm` `Lệch` `Đã kiểm` `Cần kiểm lại` + icon “Tải lại”
+
+**KPI gọn (chips):**
+- Tổng mã / Đã kiểm / Lệch
+
+**Item card (2 cột):**
+- **Trái:** Tên hàng (title) + mã (muted) + ĐVT (chip nhỏ)
+- **Trạng thái:** ChipStatus (Chưa kiểm / Đã kiểm / Lệch)
+- **Phải:** 3 dòng số rõ:
+  - Thực tế
+  - Sổ sách
+  - Chênh
+- Nếu `Chưa kiểm`: Thực tế = “—” nhưng ChipStatus vẫn nổi.
+- Nếu `Lệch`: Chênh tô đậm + chấm màu (warning/danger theo ngưỡng).
+
+**Pagination:**
+- Nếu ít item: bỏ pagination
+- Nếu cần: ưu tiên “Load more” thay vì Trang trước/Trang sau (đỡ rối).
+
+---
+
+## 6) Thiết kế riêng cho Màn Quét (Scan) — phần quan trọng nhất
+### 6.1 Mục tiêu UX
+- Không nhầm mode (Location vs SKU)
+- Không nhầm location hiện tại
+- Không scan lặp
+- Có thao tác nhanh & manual fallback
+
+### 6.2 Layout đề xuất
+**Top overlay (context bar):**
+- Chip `Location hiện tại: WH_KHO_VIENTIANE_SPM`
+- Chip `Mode: Quét vị trí` / `Mode: Quét SKU`
+- Icon: Flash, Close (X)
+
+**Scan frame:**
+- 4 góc sáng + mask tối nhẹ xung quanh (tập trung vào khung)
+- Scan line vàng mảnh (accentYellow)
+
+**Bottom sheet (30–35% màn):**
+- Hướng dẫn 1 câu: “Đưa mã vào khung”
+- Manual input (paste code) + nút “Xác nhận”
+- Recent locations (3–5) → 1 chạm set location
+- Toggle: âm báo / rung / autofocus
+
+### 6.3 Anti double-scan / stability
+- Sau khi scan thành công: **pause 800–1200ms**
+- Haptic + beep nhẹ
+- Toast: “Đã chọn location: KHO_01” hoặc “Đã nhận SKU…”
+- Nếu scan cùng 1 code trong 1s: ignore
+
+### 6.4 Microcopy (ngắn, kho hiểu liền)
+- Mode Location: “Quét QR vị trí (VD: LOC:KHO_01)”
+- Mode SKU: “Quét mã hàng / barcode”
+- Toast: “Đã set vị trí”, “Đã lưu số lượng”, “Mã không hợp lệ”
+
+---
+
+## 7) Quick wins (làm ngay trong sprint)
+1. **Giảm block xanh đậm**: KPI chuyển sang chip/card nền sáng.
+2. **ChipStatus phải hiện ở mọi list**: chưa kiểm/đã kiểm/lệch.
+3. **CTA Quét** nổi bật nhất (Primary).
+4. **Scan overlay có location + mode**.
+5. **Chống scan lặp + toast confirm**.
+
+---
+
+## 8) Acceptance Criteria (để test)
+- Nhìn Cross-Location: phân biệt ngay 4 trạng thái (chưa kiểm/đã kiểm/lệch/cần kiểm lại).
+- Quét Location: set thành công, hiển thị chip location rõ ràng.
+- Quét không bị lặp liên tục; có toast confirm.
+- Người mới dùng 2 phút vẫn hiểu “bước 1: quét location, bước 2: quét SKU”.
+
+---
+
+## 9) Gợi ý implementation (React Native / Expo)
+- Dùng `SafeAreaView` + `StatusBar` đồng bộ màu.
+- List: ưu tiên `FlashList` nếu data lớn.
+- Chip & card: đưa vào `components/ui/` để reuse.
+- Scan: quản lý state “mode” + “currentLocation” ở store (zustand/redux) để tránh mất khi back/replace.
+
+---
+
+## 10) Next step (để dev làm nhanh)
+1) Chốt token màu theo logo NNC (lấy 1–2 mã green chuẩn).
+2) Refactor UI components: `ChipStatus`, `KpiChip`, `ItemCard`.
+3) Apply lại 3 màn: Home / Cross-Location / Scan.
+4) Test thực địa: ánh sáng kho + scan lặp + thao tác 1 tay.
+

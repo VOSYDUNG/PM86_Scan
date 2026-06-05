@@ -1,7 +1,7 @@
 import '@/infra/polyfills';
 
 import React from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useSegments } from 'expo-router';
 import { Text, View, LogBox, AppState } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -10,6 +10,9 @@ import { useInitDb } from '@/presentation/hooks/useInitDb';
 import { COLORS } from '@/presentation/theme';
 import { AnimatedSplash } from '@/presentation/components/AnimatedSplash';
 import { ErrorBoundary } from '@/presentation/components/ErrorBoundary';
+import { ThemedAlertHost } from '@/presentation/components/ThemedAlertHost';
+import { useAppStore } from '@/presentation/store/appStore';
+import { resolveLanguage, t } from '@/presentation/i18n';
 import { log } from '@/infra/logger';
 import { setupGlobalErrorHandlers } from '@/infra/setupErrorHandlers';
 
@@ -24,6 +27,12 @@ setupGlobalErrorHandlers();
 
 export default function RootLayout() {
   const { ready, error } = useInitDb();
+  const languagePreference = useAppStore((s) => s.uiLanguage);
+  const setActiveRouteScope = useAppStore((s) => s.setActiveRouteScope);
+  const setPhysicalScanScope = useAppStore((s) => s.setPhysicalScanScope);
+  const setAppIsForeground = useAppStore((s) => s.setAppIsForeground);
+  const segments = useSegments();
+  const lang = resolveLanguage(languagePreference);
   const [animationFinished, setAnimationFinished] = React.useState(false);
 
   React.useEffect(() => {
@@ -46,16 +55,30 @@ export default function RootLayout() {
   }, [ready, error]);
 
   React.useEffect(() => {
+    setAppIsForeground(AppState.currentState === 'active');
     const sub = AppState.addEventListener('change', (state) => {
       log('APP_STATE', state);
+      const isForeground = state === 'active';
+      setAppIsForeground(isForeground);
+      if (!isForeground) {
+        setPhysicalScanScope('DISABLED');
+      }
     });
     return () => sub.remove();
-  }, []);
+  }, [setAppIsForeground, setPhysicalScanScope]);
+
+  React.useEffect(() => {
+    const routeScope = segments[0] === 'scan' ? 'SCAN' : 'DISABLED';
+    setActiveRouteScope(routeScope);
+    if (routeScope !== 'SCAN') {
+      setPhysicalScanScope('DISABLED');
+    }
+  }, [segments, setActiveRouteScope, setPhysicalScanScope]);
 
   if (error) {
     return (
       <View style={{ flex: 1, padding: 16, justifyContent: 'center', alignItems: 'center' }}>
-        <Text style={{ fontSize: 18, fontWeight: '700', color: 'red', marginBottom: 8 }}>System Error</Text>
+        <Text style={{ fontSize: 18, fontWeight: '700', color: 'red', marginBottom: 8 }}>{t(lang, 'errorBoundary.title')}</Text>
         <Text selectable style={{ textAlign: 'center' }}>{error}</Text>
       </View>
     );
@@ -79,9 +102,10 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="inventory" />
         <Stack.Screen name="scan" />
+        <Stack.Screen name="locations" />
         <Stack.Screen name="settings" />
-        <Stack.Screen name="logs" />
       </Stack>
+      <ThemedAlertHost />
     </ErrorBoundary>
   );
 }

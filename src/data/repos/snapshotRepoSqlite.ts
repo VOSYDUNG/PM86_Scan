@@ -182,6 +182,23 @@ export function snapshotRepoSqlite(): SnapshotRepo & SnapshotWriteRepo {
       );
     },
 
+    async getSnapshotMeta(snapshotId: string) {
+      const db = await getDb();
+      const row = await db.getFirstAsync<{ id: string; snapshotAt: number; sourceFileName: string }>(
+        'SELECT id, snapshotAt, sourceFileName FROM snapshots WHERE id = ? LIMIT 1',
+        [snapshotId],
+      );
+      return row ?? undefined;
+    },
+
+    async renameSnapshot(snapshotId: string, sourceFileName: string) {
+      const db = await getDb();
+      await db.runAsync(
+        'UPDATE snapshots SET sourceFileName = ? WHERE id = ?',
+        [sourceFileName, snapshotId],
+      );
+    },
+
     async deleteSnapshot(snapshotId: string) {
       const db = await getDb();
       await db.withTransactionAsync(async () => {
@@ -198,6 +215,26 @@ export function snapshotRepoSqlite(): SnapshotRepo & SnapshotWriteRepo {
           const placeholders = sessionIds.map(() => '?').join(',');
           await db.runAsync(
             `DELETE FROM actual_rows WHERE sessionId IN (${placeholders})`,
+            sessionIds
+          );
+          await db.runAsync(
+            `DELETE FROM count_lines WHERE sessionId IN (${placeholders})`,
+            sessionIds
+          );
+          await db.runAsync(
+            `DELETE FROM location_counts WHERE sessionId IN (${placeholders})`,
+            sessionIds
+          );
+          await db.runAsync(
+            `DELETE FROM location_scope_items WHERE sessionId IN (${placeholders})`,
+            sessionIds
+          );
+          await db.runAsync(
+            `DELETE FROM submission_import_logs WHERE sessionId IN (${placeholders})`,
+            sessionIds
+          );
+          await db.runAsync(
+            `DELETE FROM session_exchange_meta WHERE sessionId IN (${placeholders})`,
             sessionIds
           );
           

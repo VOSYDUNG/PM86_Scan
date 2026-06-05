@@ -94,7 +94,7 @@ export function AnimatedSplash({ onFinish }: { onFinish?: () => void }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF', // Match native splash
+    backgroundColor: COLORS.background, // Match native splash
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.55)',
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.7)',
-    shadowColor: '#BFE9FF',
+    shadowColor: '#DCEBD6',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
     shadowRadius: 18,
@@ -126,15 +126,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.35)',
-    backgroundColor: 'rgba(240,249,255,0.35)',
+    backgroundColor: 'rgba(240,247,234,0.45)',
   },
   halo: {
     position: 'absolute',
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: '#FFD700', // Gold/Yellow "Buddha" light
-    shadowColor: '#FFD700',
+    backgroundColor: COLORS.accent, // Brand yellow glow
+    shadowColor: COLORS.accent,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
     shadowRadius: 20,

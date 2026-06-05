@@ -1,310 +1,158 @@
-# plan.md — Nâng cấp tính năng Kiểm kê (PM86 / Multi-Location / “Sự thật” tồn kho)
+# PM84 – Tổng hợp lỗi cần fix (WEDGE + UI/UX Scan)
+
+Phiên bản tài liệu: 0.1  
+Ngày: 2026-02-25  
+Phạm vi: Ứng dụng PM84/PM86 StockCount – màn **Scan** (WEDGE/Camera) và các luồng liên quan.
+
+---
 
 ## 0) Bối cảnh & mục tiêu
-**Bối cảnh:** Kiểm kê ngoài kho cho nhiều **kho (warehouse)** và **kho xe (vehicle stock)** trong cùng **một phiên**. Hàng hóa rải nhiều location; cùng một SKU có thể gặp lại khi chuyển location. Hiện tại app chủ yếu ghi **chênh lệch chung** + ghi chú, chưa giúp phân rã nguyên nhân và chưa đảm bảo “coverage” (đã kiểm đủ location hay chưa).
-
-**Mục tiêu nâng cấp (định nghĩa “kiểm kê tốt nhất”):**
-1) **Nhanh**: thao tác 1 tay trên PM86 (WEDGE/Enter), tối ưu Fast Lane.  
-2) **Thật**: không chỉ ra số chênh mà còn:
-   - biết **coverage** (đã kiểm đủ location chưa)  
-   - gợi ý **nguyên nhân lệch** theo rule  
-   - phân rã số lượng theo **bucket chất lượng** (usable vs ngoại lệ) khi cần
-3) **Chuẩn để nạp MISA**: xuất **CSV machine-friendly** theo (Location × SKU).  
-4) **Dễ vận hành nhiều kho**: có dashboard tiến độ theo location, không nhầm location, có “kho xe”.
+- PM84 đã **cài app thành công**.
+- Khi vào **màn Scan** và chọn **WEDGE**, người dùng bóp cò quét rất nhanh, nhưng **app không ghi nhận đúng** và phát sinh nhiều lỗi UI/UX.
+- Mục tiêu: làm cho trải nghiệm **“bóp cò là ăn”**:
+  - Quét liên tục nhanh, UI cập nhật kịp.
+  - Không cần thao tác thừa (“bấm mở” mới được quét).
+  - Không bị nhập nhầm vào ô khác, không mất focus.
 
 ---
 
-## 1) Quy ước Location (ID trước, đặt tên sau)
-### 1.1 Nguyên tắc
-- **Luôn dùng `location_id` ổn định** (không phụ thuộc tên hiển thị).
-- `location_name` chỉ là **display**, có thể đổi sau.
-- Cho phép tạo location bằng **code/ID trước**, đặt tên sau (khi chưa đủ thông tin).
+## 1) Triệu chứng quan sát thực tế (từ video)
+### 1.1 WEDGE không “vào app”
+- Vào màn Scan → chọn WEDGE → **chưa bấm nút “mở quét”** nhưng bóp cò vẫn quét ra kết quả.
+- Kết quả quét **không đi vào app**, mà **hiện ở góc dưới** (toast/popup) với **mã số + nút Share** (mốc ~3.5s).
 
-### 1.2 Cấu trúc Location
-- `location_id`: string (UUID hoặc code chuẩn)
-- `location_code`: string (unique trong scope công ty) — ví dụ `WH_VTE_MAIN`, `VEH_29A12345`
-- `display_name`: string (có thể chỉnh sau)
-- `type`: `WAREHOUSE | VEHICLE | QUARANTINE | OTHER`
-- `status`: `ACTIVE | INACTIVE`
-- `meta`: optional (biển số, driver, tuyến…)
+**Kết luận nhanh:** scanner engine hoạt động, nhưng output không theo kiểu “keyboard wedge” (gõ vào input) nên app không bắt được.
 
-### 1.3 QR/Barcode Location (khuyến nghị)
-QR dán tại cửa kho / trên xe:
-- Payload đơn giản: `LOC:WH_VTE_MAIN` hoặc `LOC:VEH_29A12345`
-App parse ra `location_code` → lookup → set current location.
+### 1.2 UI/UX sai trạng thái (“bấm được khi chưa mở”)
+- Một số thao tác có thể **tích/chọn** dù trạng thái quét “chưa mở”.
+- Trạng thái “Sẵn sàng quét” không rõ ràng, gây hiểu nhầm “app không nhận máy”.
+
+### 1.3 Trải nghiệm “quét nhanh” chưa tối ưu cho PM84
+- PM84 bắn rất nhanh, nhưng UI hiện tại chưa được thiết kế để:
+  - Nhận nhiều scan liên tục (queue).
+  - Auto-add/auto-accumulate + phản hồi tức thì (beep/rung/toast).
 
 ---
 
-## 2) Thiết kế nghiệp vụ kiểm kê theo Location (core)
-### 2.1 Data model (Clean Architecture)
-> Key mấu chốt: dữ liệu kiểm kê là **(product_id, location_id)**. Một SKU rải 3 location = 3 dòng khác nhau.
+## 2) Phân loại nguyên nhân gốc
+### A) Cấu hình thiết bị PM84 (P0)
+PM84 đang output theo kiểu **User Message/Clipboard/Intent**, nên hệ điều hành tự pop-up kết quả (có Share).  
+=> App không nhận vì **không có chuỗi barcode “gõ vào input”**.
 
-**Entities**
-- `StockCountSession`
-  - `session_id`
-  - `title`
-  - `created_at`
-  - `cutoff_time` (thời điểm snapshot MISA)
-  - `mode_default`: `ADD | SET`
-  - `blind_count`: boolean (optional)
-  - `locations_in_scope[]`: list of `location_id`
-  - `status`: `DRAFT | IN_PROGRESS | CLOSED | EXPORTED`
-- `LocationCount` (sub-session theo location)
-  - `session_id`
-  - `location_id`
-  - `status`: `PENDING | IN_PROGRESS | DONE | LOCKED`
-  - `progress`: `{ expected_lines, counted_lines, uncounted_lines, need_recount_lines }`
-- `CountLine` (per product × location)
-  - `session_id`
-  - `location_id`
-  - `product_id`
-  - `system_qty` (snapshot từ MISA theo location)
-  - `count_total` (tổng physical count tại location)
-  - `exceptions[]`: list of `{ reason, qty, note?, evidence? }`
-  - `count_usable` = `count_total - sum(exceptions.qty)`
-  - `diff` = `count_usable - system_qty`
-  - `state`: `UNCOUNTED | COUNTED | NEED_RECOUNT | QUARANTINE`
-  - `updated_at`, `updated_by`
-- `ProductIdentifier` (nếu đã có/đang dùng)
-  - map barcode/alias → product_id để scan nhanh
+### B) Ứng dụng chưa có pipeline WEDGE chuẩn (P0)
+- Thiếu cơ chế **Hidden Input giữ focus** để nhận dữ liệu wedge.
+- Thiếu cơ chế **finalize chuỗi** (Enter/LF hoặc timeout 50–120ms).
+- Có thể đang áp dụng cooldown camera sang WEDGE → nuốt sự kiện khi quét nhanh.
 
-### 2.2 Coverage theo SKU toàn phiên (để tránh “lệch tạm thời”)
-**CoverageStatus (per product trong session):**
-- `NOT_STARTED`: chưa đếm ở location nào
-- `PARTIAL`: đã đếm ở một số location nhưng chưa đủ scope
-- `COMPLETE`: đã kiểm đủ scope (hoặc user xác nhận đủ)
-
-**Tính coverage**
-- `checked_locations = count(location_id where CountLine.count_total exists)`
-- `coverage = checked_locations / locations_in_scope`
-- Có thể “complete” thủ công khi scope thay đổi/ngoại lệ vận hành.
-
-### 2.3 Reconciliation Hint (gợi ý nguyên nhân lệch ở cấp SKU toàn phiên)
-Sinh hint cho mỗi SKU dựa trên pattern dữ liệu giữa các location:
-1) `INCOMPLETE_COVERAGE` — chưa kiểm hết location → lệch tạm thời
-2) `MISLOCATION` — kho A thừa, kho B thiếu (bù trừ) → hàng nằm sai vị trí
-3) `IN_TRANSIT_VEHICLE` — lệch gợi ý do xe (xe chưa kiểm/xe có tồn)
-4) `QUALITY_EXCEPTION` — có ngoại lệ chất lượng (expired/damaged/wrong code/size…)
-5) `TRANSACTION_TIMING` — phát sinh sau cutoff hoặc chứng từ chưa lên MISA
+### C) State machine UI chưa khóa theo “trạng thái sẵn sàng” (P1)
+- Nút/checkbox hoạt động sai thời điểm.
+- Người dùng không biết lúc nào app đang “listen” WEDGE thật sự.
 
 ---
 
-## 3) Bucket chất lượng (đếm “thật” không chỉ số)
-### 3.1 Nguyên tắc thao tác
-- **Fast Lane**: 80–90% hàng là OK → mặc định **không cần phân loại**.
-- Chỉ khi có vấn đề mới mở Quick Split để nhập ngoại lệ.
+## 3) Danh sách lỗi cần fix (theo ưu tiên)
+### P0 – Bắt buộc fix để WEDGE chạy được
+1) **Chuẩn hoá cấu hình ScanSettings trên PM84**
+   - Wedge mode → Result type = **Keyboard / Key Event** (gửi như gõ phím).
+   - Tắt User Message (để không pop-up + Share).
+   - Terminator/Suffix = **Enter/LF** (hoặc cấu hình tương đương).
+   - (Tuỳ mô hình) Nếu doanh nghiệp muốn “không phụ thuộc focus”: bật/chuẩn hoá **Intent Broadcast** để app nhận qua intent.
 
-### 3.2 Bucket mặc định
-- `GOOD/USABLE` (implicit) = `count_total - sum(exceptions)`
+2) **Implement pipeline WEDGE chuẩn trong app**
+   - Có **TextInput ẩn** (hidden) để nhận chuỗi barcode:
+     - `autoFocus = true`
+     - `showSoftInputOnFocus = false`
+     - Refocus lại sau khi đóng modal/sheet hoặc khi user chạm linh tinh.
+   - Parse chuỗi barcode theo 2 điều kiện:
+     - Nhận ký tự kết thúc: `\n` / `\r` (Enter/LF), **hoặc**
+     - Timeout finalize: không có ký tự mới trong ~80ms.
+   - Khi finalize:
+     - Normalize: trim, remove terminator, validate length/pattern.
+     - Dispatch vào `resolveBarcode()` như camera.
 
-### 3.3 Exceptions (P0 đề xuất tối thiểu)
-- `EXPIRED` (hết hạn)
-- `DAMAGED` (hư hỏng)
-- `WRONG_CODE` (lộn mã/sai barcode)
-- `WRONG_SIZE_PACK` (nhầm size/quy cách)
-- `LOW_QUALITY` (kém chất lượng)
-- `OTHER`
+3) **Tách cooldown của CAMERA và WEDGE**
+   - CAMERA có cooldown để tránh quét trùng.
+   - WEDGE **không dùng cooldown camera**; thay bằng queue + finalize, để bóp cò liên tục vẫn nhận.
 
-> Có thể khởi động P0 chỉ với 4–5 loại chính để thao tác nhanh, mở rộng sau.
+### P1 – Fix UI/UX để người dùng không bị “lạc trạng thái”
+4) **State machine rõ ràng & khóa UI đúng**
+   - Trạng thái đề xuất:
+     - `Chưa sẵn sàng`
+     - `Sẵn sàng quét`
+     - `Đang ghi nhận`
+     - `Đã ghi nhận`
+   - Khi chưa sẵn sàng: disable các thao tác gây hiểu nhầm (tick/confirm/submit…).
+   - Khi vào WEDGE mode: **tự chuyển sang “Sẵn sàng quét”** (không bắt user bấm “mở”).
+   - Hiển thị badge rõ: `WEDGE ● Sẵn sàng` / `CAMERA ● Đang bật`.
 
----
+5) **Phản hồi tức thì cho “quét nhanh”**
+   - Mỗi scan hợp lệ:
+     - Beep/rung ngắn (nếu device hỗ trợ).
+     - Toast: “Vừa quét: <code> +1”.
+     - Highlight item vừa cập nhật.
 
-## 4) Trạng thái (tổng hợp đã thống nhất)
-### 4.1 LocationCount.status (4)
-`PENDING | IN_PROGRESS | DONE | LOCKED`
+### P2 – Nâng trải nghiệm vận hành (khuyến nghị)
+6) **Auto-add + Undo (3–5s)**
+   - Quét xong tự cộng dồn ngay.
+   - Cho nút Undo ngắn hạn để sửa nhầm, giảm thao tác.
 
-### 4.2 CountLine.state (4)
-`UNCOUNTED | COUNTED | NEED_RECOUNT | QUARANTINE`
-
-### 4.3 CoverageStatus (3)
-`NOT_STARTED | PARTIAL | COMPLETE`
-
-### 4.4 ReconciliationHint (5)
-`INCOMPLETE_COVERAGE | MISLOCATION | IN_TRANSIT_VEHICLE | QUALITY_EXCEPTION | TRANSACTION_TIMING`
-
-### 4.5 Quality buckets (7, gồm GOOD)
-`GOOD | EXPIRED | DAMAGED | WRONG_CODE | WRONG_SIZE_PACK | LOW_QUALITY | OTHER`
-
----
-
-## 5) UX/UI Flow tối ưu PM86 (WEDGE / 1 tay)
-### 5.1 Màn Home Session
-- Tạo/Chọn Session
-- Danh sách Location trong scope + progress bar từng location
-- Nút: **Export CSV (MISA)** / **Export Breakdown (Internal)**
-
-### 5.2 Màn Set Location (cực quan trọng)
-- Hiển thị lớn “LOCATION hiện tại”
-- Chọn từ list / search
-- **Scan QR location** để set nhanh (khuyến nghị)
-
-### 5.3 Màn Scan Fast Lane (P0)
-**Chu kỳ thao tác tối ưu:**
-1) Scan SKU → auto match product
-2) Focus vào ô số → nhập **TOTAL** → Enter
-3) Popup nhanh: “Có ngoại lệ không?”
-   - [Không] (Enter) → Save → quay về ô scan
-   - [Có] → Quick Split
-
-**Tối ưu:**
-- Auto-focus ô scan sau khi Save
-- Debounce scan (bỏ scan trùng trong 300–500ms)
-- Cảnh báo số lượng bất thường (ví dụ > 5× system_qty)
-
-### 5.4 Quick Split (P0)
-- Hiển thị `TOTAL`
-- Chip reason + ô qty + nút +1/+5/+10
-- Hiển thị live: `USABLE = TOTAL - EXC`
-- Save (Enter)
-
-### 5.5 Màn Review theo Location
-Tabs:
-- Uncounted / Counted / Need Recount / Quarantine
-- Search SKU
-- Nút “Đi kiểm phần chưa đếm” (jump back Scan)
-
-### 5.6 Màn Review theo SKU (cross-location)
-Một SKU hiển thị bảng:
-- Expected (system_qty) theo location
-- Counted total/usable theo location
-- Coverage + hint nguyên nhân
-Nút hành động:
-- “Đi kiểm location còn thiếu”
-- “Đánh dấu cần đếm lại”
+7) **Trang “Test Scanner” trong Settings**
+   - Bóp cò → hiện “Đã nhận: xxxx”.
+   - Hiện thông tin suffix/terminator (nếu đọc được) hoặc trạng thái mode.
+   - Giúp đội vận hành tự kiểm tra trong 10 giây, giảm gọi kỹ thuật.
 
 ---
 
-## 6) Quy tắc thông minh (helpers) — “Smart đúng nghĩa”
-### 6.1 Lệch do chưa đủ coverage
-Nếu coverage != COMPLETE:
-- Gắn label “Lệch tạm thời”
-- Gợi ý location chưa kiểm
+## 4) Kịch bản test nhanh (5 giây “chốt đúng bệnh”)
+### Test 1 – Nhận diện output sai kiểu keyboard (case hiện tại)
+- Vào Scan → chọn WEDGE → **không bấm nút mở** → bóp cò:
+  - Nếu **pop-up góc dưới + có Share** → output đang là User Message/Clipboard/Intent.
+  - Kết luận: **scanner OK, cấu hình output chưa đúng cho app**.
 
-### 6.2 Mislocation detector
-Nếu pattern: location A `diff>0` và location B `diff<0` và cùng SKU:
-- Hint MISLOCATION
-- Tạo task nội bộ “xác minh vị trí/điều chuyển” (log)
+### Test 2 – Sau khi fix cấu hình (mục 3.1)
+- Vào Scan → WEDGE:
+  - Bóp cò → **không còn pop-up Share**.
+  - Barcode phải vào app và:
+    - Add item mới / increment item cũ.
+    - Có toast/beep theo thiết kế.
 
-### 6.3 Vehicle hint
-Nếu có location type VEHICLE trong scope và chưa kiểm:
-- Hint IN_TRANSIT_VEHICLE
-- Nút “Đi kiểm xe”
-
-### 6.4 Recount rule
-Nếu `abs(diff) >= X` hoặc `abs(diff)/max(system_qty,1) >= Y%`:
-- Set state = NEED_RECOUNT
-- Có log count1/count2 (optional P1)
-
-### 6.5 Anti-wrong-item (nhầm size/quy cách)
-- Hiển thị rõ quy cách (size/pack) khi scan
-- Nếu user chọn item khác top1 fuzzy → cảnh báo “Có thể nhầm size/quy cách”
+### Test 3 – Stress test quét nhanh
+- Quét liên tục 20–50 lần:
+  - Không bỏ sót scan.
+  - UI không giật/đơ.
+  - Số lượng cộng dồn chính xác.
 
 ---
 
-## 7) Export / Import (MISA & nội bộ)
-### 7.1 Export file cho MISA (CSV)
-**1 file tổng** (mặc định) có cột Location:
-- `LocationCode, LocationName, Mã hàng, Tên hàng, ĐVT, Cuối kỳ, SL Kiểm kê, Chênh lệch, Ghi chú`
-
-Quy tắc:
-- `SL Kiểm kê` = **count_usable** (khuyến nghị để hạch toán đúng)
-- `Ghi chú` auto append: `Expired:..; Damaged:..; WrongCode:..; WrongSize:..`
-
-Tùy chọn:
-- Export per location (mỗi kho/xe 1 file) nếu kế toán thích theo kho.
-
-### 7.2 Export Breakdown nội bộ (CSV)
-Thêm cột:
-- `Total, Usable, Expired, Damaged, WrongCode, WrongSize, LowQuality, Other, Coverage, Hint`
+## 5) Acceptance Criteria (tiêu chí “pass”)
+- [ ] Khi chọn WEDGE, người dùng **bóp cò là quét được ngay**, không cần bấm “mở”.
+- [ ] Không còn pop-up kết quả có Share (trừ khi intentionally bật User Message).
+- [ ] Barcode được ghi nhận đúng vào app (add/increment), phản hồi tức thì.
+- [ ] Không bị “gõ nhầm” vào search/qty/field khác (do giữ focus input ẩn).
+- [ ] Quét nhanh liên tục không mất sự kiện, không nuốt scan.
+- [ ] UI không cho thao tác sai trạng thái (không “tick được khi chưa sẵn sàng”).
+- [ ] Có hướng dẫn ngắn cho vận hành: “Nếu thấy pop-up Share → chỉnh ScanSettings …”.
 
 ---
 
-## 8) API/Use-cases (Function list để Dev triển khai)
-> Clean Architecture: Presentation → UseCases → Repositories → DataSources
-
-### 8.1 Session
-- `createSession(params)`
-- `loadSession(session_id)`
-- `closeSession(session_id)`
-- `addLocationsToScope(session_id, location_ids[])`
-- `setSessionOptions(session_id, { mode_default, blind_count, recount_threshold })`
-
-### 8.2 Location context
-- `setCurrentLocation(session_id, location_id)`
-- `setCurrentLocationByScan(session_id, scannedText)` → parse `LOC:` → map to location
-- `finishLocation(session_id, location_id)` → status DONE
-- `lockLocation(session_id, location_id)` → status LOCKED (role-based)
-
-### 8.3 Product matching
-- `resolveProductByScan(scannedText, { location_id?, preferLocation=true })`
-- `saveBarcodeAlias(product_id, scannedText)` (role-based / smart-learn)
-
-### 8.4 Counting
-- `upsertCountTotal(session_id, location_id, product_id, qty, mode=ADD|SET)`
-- `addException(session_id, location_id, product_id, reason, qty, note?)`
-- `removeException(...)`
-- `computeUsable(count_total, exceptions[])`
-- `evaluateLineState(diff, rules)` → COUNTED/NEED_RECOUNT/QUARANTINE
-- `debounceScan(scannedText)` (infra)
-
-### 8.5 Coverage & Reconciliation
-- `computeCoverage(session_id, product_id)` → NOT_STARTED/PARTIAL/COMPLETE
-- `computeSkuTotalsAcrossLocations(session_id, product_id)`
-- `suggestReconciliationHint(session_id, product_id)` → 5 hints
-
-### 8.6 Review & Navigation
-- `getLinesByLocation(session_id, location_id, filter)`
-- `getSkuOverview(session_id, product_id)`
-- `getNextUncounted(session_id, location_id)`
-
-### 8.7 Export
-- `exportMisaCsv(session_id, options={ combined | perLocation })`
-- `exportBreakdownCsv(session_id, options)`
+## 6) Việc cần bạn cung cấp cho dev (để fix nhanh)
+- Ảnh/video chụp **ScanSettings** của PM84 (mục Wedge mode):
+  - Result type đang là gì?
+  - Terminator/Suffix đang là gì?
+  - User Message / Clipboard / Intent có đang bật không?
+- 1–2 barcode mẫu (độ dài, prefix) để dev test normalize.
 
 ---
 
-## 9) Quyền hạn (Role-based) — tối giản nhưng cần thiết
-- `Counter` (nhân viên): nhập số, thêm exception, không sửa snapshot, không lock
-- `Supervisor`: lock/unlock location, confirm complete coverage, approve alias barcode
-- `Admin`: quản lý locations, mapping barcode, cấu hình threshold
+## 7) Gợi ý chia việc (1 sprint ngắn)
+- Ngày 1: Chuẩn hoá ScanSettings + xác nhận output dạng keyboard.
+- Ngày 2: Implement hidden input + finalize logic + tách cooldown camera/wedge.
+- Ngày 3: State machine UI + phản hồi scan nhanh (toast/beep/highlight).
+- Ngày 4: QA stress test + fix edge cases (modal, mất focus, quay lại màn).
+- Ngày 5 (tuỳ chọn): “Test Scanner” + Auto-add + Undo.
 
 ---
 
-## 10) Non-functional (hiệu năng & ổn định)
-- Offline-first: lưu local DB (SQLite/WatermelonDB/Realm tùy stack hiện tại)
-- Sync/Export chỉ khi cần (CSV)
-- Tối ưu render list (FlashList) cho review
-- Bảo vệ thao tác: undo last action (optional P1)
-- Log audit: ai nhập, lúc nào, ở location nào
-
----
-
-## 11) Roadmap triển khai (không tăng thao tác)
-### P0 (Đã hoàn thành ✅)
-- [x] Location scope + set current location (Auto-create default)
-- [x] CountLine per (product × location)
-- [x] Fast Lane: scan → total → (no exception) save
-- [x] Quick Split (6 exception types: Expired, Damaged, Wrong Code...)
-- [x] Review per location: Uncounted/Counted
-- [x] Export MISA CSV (combined) + Excel
-
-### P1 (Sắp tới 🚀)
-- [ ] Coverage per SKU + dashboard (Đã có Detail Report, cần Dashboard tổng)
-- [ ] Reconciliation hint + “go to missing location” (Đã có Logic, cần UI Navigation)
-- [ ] Mislocation / vehicle hint
-- [ ] Smart alias suggestion (controlled)
-- [ ] Quét QR Location (LOC:code) để tạo vị trí nhanh
-
-### P2
-- Evidence ảnh cho ngoại lệ vượt ngưỡng
-- Count1/Count2 (recount) audit
-- Bin/kệ (nếu cần)
-
----
-
-## 12) Definition of Done (DoD)
-- Không nhầm location (QR set location + cảnh báo khi SKU thuộc location khác)
-- Có thể đi nhiều kho + xe trong 1 session, gặp lại SKU vẫn cộng dồn đúng
-- Biết rõ “lệch tạm thời do chưa đủ coverage”
-- Export CSV nạp MISA không lỗi, có đủ cột Location
-- Có breakdown nội bộ để xử lý hàng lỗi/hết hạn/lộn mã
+## 8) Ghi chú rủi ro
+- Nếu công ty có MDM/Policy hạn chế ScanSettings, cần chốt 1 cấu hình chuẩn và hướng dẫn IT áp chính sách thiết bị.
+- Nếu muốn “không phụ thuộc focus” cho WEDGE, nên ưu tiên **Intent Broadcast** + receiver trong app (cần dev xác nhận PM84 hỗ trợ mode này).

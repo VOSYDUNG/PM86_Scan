@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "PM86 StockCount",
-    "slug": "pm86-stockcount",
+    "name": "PM86 StockCount V2",
+    "slug": "pm86-stockcount-v2",
     "scheme": "pm86stockcount",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -29,31 +29,40 @@
     "splash": {
       "image": "./assets/LOGO_2.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
+      "backgroundColor": "#F5F7F2"
     },
     "android": {
       "package": "com.nnc.pm86stockcount",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
       ],
       "adaptiveIcon": {
-      "foregroundImage": "./assets/LOGO_1_square.png",
-        "backgroundColor": "#FFFFFF"
+        "foregroundImage": "./assets/LOGO_1_square.png",
+        "backgroundColor": "#F5F7F2"
       },
       "splash": {
         "image": "./assets/LOGO_2.png",
         "resizeMode": "contain",
-        "backgroundColor": "#FFFFFF"
+        "backgroundColor": "#F5F7F2"
       }
     },
     "ios": {
       "supportsTablet": true
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6167de46-7e1f-4a46-85a4-414e2d4e56fd"
+      }
     }
   }
 }

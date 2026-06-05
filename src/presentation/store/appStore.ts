@@ -19,6 +19,25 @@ interface ImportState {
   importErrorCount: number;
 }
 
+export type ScannerDebugSource = 'keyboard' | 'intent' | null;
+export type ScannerDebugSuffix = 'lf' | 'cr' | 'timeout' | 'unknown' | null;
+export type ActiveRouteScope = 'DISABLED' | 'SCAN';
+export type PhysicalScanScope =
+  | 'DISABLED'
+  | 'INVENTORY_WEDGE_ACTIVE'
+  | 'INVENTORY_WEDGE_PAUSED'
+  | 'INVENTORY_CAMERA_ACTIVE'
+  | 'INVENTORY_CAMERA_PAUSED';
+
+interface ScannerDebugState {
+  lastSource: ScannerDebugSource;
+  lastPayload: string;
+  lastPayloadAt: number | null;
+  lastSuffix: ScannerDebugSuffix;
+  lastIntervalMs: number | null;
+  lastError: string | null;
+}
+
 interface AppState extends ImportState {
   currentSnapshotId: string | null;
   currentSourceFileName: string | null;
@@ -26,6 +45,12 @@ interface AppState extends ImportState {
   currentWarehouse: string | null;
   currentLocationId: string | null; // Multi-Location context
   scanMode: 'WEDGE' | 'CAMERA' | 'QUICK';
+  operationMode: 'BASIC' | 'ADVANCED';
+  uiLanguage: 'vi' | 'lo' | 'system';
+  scannerDebug: ScannerDebugState;
+  activeRouteScope: ActiveRouteScope;
+  physicalScanScope: PhysicalScanScope;
+  appIsForeground: boolean;
   
   // Pending import data (when conflicts exist)
   pendingImport: PendingImport | null;
@@ -35,6 +60,13 @@ interface AppState extends ImportState {
   setWarehouse: (name: string | null) => void;
   setCurrentLocationId: (id: string | null) => void;
   setScanMode: (mode: 'WEDGE' | 'CAMERA' | 'QUICK') => void;
+  setOperationMode: (mode: 'BASIC' | 'ADVANCED') => void;
+  setUiLanguage: (lang: 'vi' | 'lo' | 'system') => void;
+  setScannerDebug: (patch: Partial<ScannerDebugState>) => void;
+  clearScannerDebug: () => void;
+  setActiveRouteScope: (scope: ActiveRouteScope) => void;
+  setPhysicalScanScope: (scope: PhysicalScanScope) => void;
+  setAppIsForeground: (foreground: boolean) => void;
   
   setPendingImport: (data: PendingImport | null) => void;
   
@@ -53,6 +85,19 @@ export const useAppStore = create<AppState>()(
       currentWarehouse: null,
       currentLocationId: null,
       scanMode: 'WEDGE', // Default to Wedge (Hardware Scanner)
+      operationMode: 'BASIC',
+      uiLanguage: 'vi',
+      scannerDebug: {
+        lastSource: null,
+        lastPayload: '',
+        lastPayloadAt: null,
+        lastSuffix: null,
+        lastIntervalMs: null,
+        lastError: null,
+      },
+      activeRouteScope: 'DISABLED',
+      physicalScanScope: 'DISABLED',
+      appIsForeground: true,
       pendingImport: null,
       
       // Import State Defaults
@@ -71,6 +116,29 @@ export const useAppStore = create<AppState>()(
       setWarehouse: (name) => set({ currentWarehouse: name }),
       setCurrentLocationId: (id) => set({ currentLocationId: id }),
       setScanMode: (mode) => set({ scanMode: mode }),
+      setOperationMode: (mode) => set({ operationMode: mode }),
+      setUiLanguage: (lang) => set({ uiLanguage: lang }),
+      setScannerDebug: (patch) =>
+        set((state) => ({
+          scannerDebug: {
+            ...state.scannerDebug,
+            ...patch,
+          },
+        })),
+      clearScannerDebug: () =>
+        set({
+          scannerDebug: {
+            lastSource: null,
+            lastPayload: '',
+            lastPayloadAt: null,
+            lastSuffix: null,
+            lastIntervalMs: null,
+            lastError: null,
+          },
+        }),
+      setActiveRouteScope: (scope) => set({ activeRouteScope: scope }),
+      setPhysicalScanScope: (scope) => set({ physicalScanScope: scope }),
+      setAppIsForeground: (foreground) => set({ appIsForeground: foreground }),
       
       setPendingImport: (data) => set({ pendingImport: data }),
       
@@ -99,6 +167,9 @@ export const useAppStore = create<AppState>()(
         currentWarehouse: state.currentWarehouse,
         currentLocationId: state.currentLocationId,
         scanMode: state.scanMode,
+        operationMode: state.operationMode,
+        uiLanguage: state.uiLanguage,
+        // scannerDebug and scan scope stay runtime-only to avoid stale diagnostics/runtime focus state
         // Do NOT persist pendingImport or import progress
       }),
     }
